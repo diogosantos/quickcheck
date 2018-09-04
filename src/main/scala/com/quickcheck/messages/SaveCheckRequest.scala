@@ -1,3 +1,9 @@
 package com.quickcheck.messages
 
-case class SaveCheckRequest(message: String)
+sealed trait QCRequest
+
+case class SaveCheckRequest(message: String) extends QCRequest
+
+case class ReverseStringRequest(message: String) extends QCRequest
+
+case class InvalidReversibleStringException(something: Any) extends Exception

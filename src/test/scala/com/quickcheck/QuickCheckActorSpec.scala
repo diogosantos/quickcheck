@@ -1,13 +1,24 @@
 package com.quickcheck
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.pattern.ask
 import akka.testkit.TestActorRef
-import com.quickcheck.messages.SaveCheckRequest
+import akka.util.Timeout
+import com.quickcheck.messages.{InvalidReversibleStringException, QCRequest, ReverseStringRequest, SaveCheckRequest}
 import org.scalatest.{FunSpecLike, Matchers}
+
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
+
 
 class QuickCheckActorSpec extends FunSpecLike with Matchers {
 
-  implicit val system: ActorSystem = ActorSystem()
+  import scala.concurrent.ExecutionContext.Implicits.global
+
+  private implicit val system: ActorSystem = ActorSystem()
+  private implicit val timeout: Timeout = Timeout(2 seconds)
+
+  private implicit val quickCheckActor: ActorRef = system.actorOf(Props(classOf[QuickCheckActor]))
 
   describe("quick-check") {
 
@@ -33,9 +44,47 @@ class QuickCheckActorSpec extends FunSpecLike with Matchers {
       }
     }
 
+    describe("given a ReverseStringRequest message") {
+
+      it("should reverse the string") {
+        val reverseFuture = askReverse("This should be reversed")
+
+        val result = Await.result(reverseFuture.mapTo[String], 1 seconds)
+        result should be("This should be reversed".reverse)
+      }
+
+      it("should fail on invalid string") {
+        val failureFuture = askReverse("")
+
+        intercept[InvalidReversibleStringException] {
+          Await.result(failureFuture, 1 second)
+        }
+      }
+    }
+
+    describe("given multiple ReverseStringRequest message") {
+
+      it("should reverse all the strings") {
+        val fruits = Seq("pineapple", "", "apple", "orange")
+
+        val responses: Seq[Future[String]] = fruits.map(x => askReverse(x))
+
+        val listOfFutures = Future.sequence(responses.map(f => f.recover { case _:InvalidReversibleStringException => "" }))
+        val results = Await.result(listOfFutures, 1 second)
+
+        val expected = fruits.map(_.reverse)
+        results should equal(expected)
+      }
+
+    }
+
   }
 
-  private def tellMessages(message: SaveCheckRequest*)(f: QuickCheckActor => Unit): Unit = {
+  private def askReverse(m: String): Future[String] = {
+    (quickCheckActor ? ReverseStringRequest(m)).mapTo[String]
+  }
+
+  private def tellMessages[A <: QCRequest](message: A*)(f: QuickCheckActor => Unit): Unit = {
     val actorRef = TestActorRef(new QuickCheckActor)
     message.foreach(actorRef ! _)
     f(actorRef.underlyingActor)
