@@ -25,7 +25,7 @@ class QuickCheckActor extends Actor {
     }
     case o => {
       logger.info("Unknown message received: {}", o)
-      sender() ! Status.Failure(new ClassNotFoundException())
+      Status.Failure(new ClassNotFoundException())
     }
   }
 
